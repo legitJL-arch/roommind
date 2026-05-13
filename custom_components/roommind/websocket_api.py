@@ -215,7 +215,15 @@ async def websocket_list_rooms(
     for area_id, room_config in rooms.items():
         room_data = dict(room_config)
         live = live_states.get(area_id, {})
-        if not outdoor_available and area_id not in learning_disabled and not room_config.get("is_outdoor", False):
+        # Managed Mode rooms (no temperature_sensor) never train the EKF, so
+        # surfacing "learning paused" would be misleading.
+        has_external_sensor = bool(room_config.get("temperature_sensor"))
+        if (
+            not outdoor_available
+            and has_external_sensor
+            and area_id not in learning_disabled
+            and not room_config.get("is_outdoor", False)
+        ):
             learning_paused_reason: str | None = "outdoor_unavailable"
         else:
             learning_paused_reason = None
@@ -257,7 +265,7 @@ async def websocket_list_rooms(
         msg["id"],
         {
             "rooms": result,
-            "outdoor_temp": coordinator.outdoor_temp if coordinator else None,
+            "outdoor_temp": coordinator.outdoor_temp_effective if coordinator else None,
             "outdoor_humidity": coordinator.outdoor_humidity if coordinator else None,
             "vacation_active": vacation_active,
             "vacation_temp": settings.get("vacation_temp") if vacation_active else None,

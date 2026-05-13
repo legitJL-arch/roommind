@@ -219,10 +219,14 @@ async def build_analytics_data(
             has_ext_sensor = bool(room_config.get("temperature_sensor"))
             if has_ext_sensor:
                 can_heat, can_cool = get_can_heat_cool(
-                    room_config, coordinator.outdoor_temp, acs_can_heat=check_acs_can_heat(hass, room_config)
+                    room_config,
+                    coordinator.outdoor_temp_effective,
+                    acs_can_heat=check_acs_can_heat(hass, room_config),
                 )
                 T_out = (
-                    coordinator.outdoor_temp if coordinator.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+                    coordinator.outdoor_temp_effective
+                    if coordinator.outdoor_temp_effective is not None
+                    else DEFAULT_OUTDOOR_TEMP_FALLBACK
                 )
                 mpc_active = is_mpc_active(mgr, area_id, can_heat, can_cool, 20.0, T_out)
             else:
@@ -284,7 +288,9 @@ async def build_analytics_data(
                     break
             if current_t is not None:
                 T_out_now = (
-                    coordinator.outdoor_temp if coordinator.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+                    coordinator.outdoor_temp_effective
+                    if coordinator.outdoor_temp_effective is not None
+                    else DEFAULT_OUTDOOR_TEMP_FALLBACK
                 )
                 outdoor_series = build_forecast_outdoor_series(
                     coordinator._weather_manager._outdoor_forecast,

@@ -33,6 +33,8 @@ from .const import (
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
+    OUTDOOR_UNAVAILABLE_NOTIFICATION_ID,
+    OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES,
     SCHEDULE_STATE_ON,
     THERMAL_SAVE_CYCLES,
     UPDATE_INTERVAL,
@@ -254,7 +256,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                         area_id,
                         {
                             "room_temp": rs.get("current_temp_raw", current_temp),
-                            "outdoor_temp": self.outdoor_temp,
+                            "outdoor_temp": self.outdoor_temp_effective,
                             "target_temp": target_temp,
                             "mode": mode,
                             "predicted_temp": predicted,
@@ -273,7 +275,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 room_config = rooms.get(area_id, {})
                 if (
                     current_temp is not None
-                    and self.outdoor_temp is not None
+                    and self.outdoor_temp_effective is not None
                     and not room_config.get("is_outdoor", False)
                 ):
                     try:
@@ -282,7 +284,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             raw_pred = self._model_manager.predict_window_open(
                                 area_id,
                                 current_temp,
-                                self.outdoor_temp,
+                                self.outdoor_temp_effective,
                                 3.0,
                             )
                         else:
@@ -295,7 +297,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                             )
                             raw_pred = model.predict(
                                 current_temp,
-                                self.outdoor_temp,
+                                self.outdoor_temp_effective,
                                 Q,
                                 3.0,
                                 q_solar=self._current_q_solar * rs.get("shading_factor", 1.0),
@@ -394,9 +396,13 @@ class RoomMindCoordinator(DataUpdateCoordinator):
           - "weather": weather_entity attribute "temperature" delivered a value
           - "none": neither source available
 
-        EKF training is gated on a non-None effective temperature so the
-        filter never trains with a degenerate fallback (e.g. room temp), which
-        would cause the alpha state to drift to the upper bound — see #301.
+        ``self.outdoor_temp`` remains the raw sensor reading for diagnostics;
+        the result of this method is stored in ``self.outdoor_temp_effective``
+        and is the canonical value all consumers (EKF, MPC, cover, heat-source,
+        analytics, mold) use. EKF training is gated on a non-None effective
+        temperature so the filter never trains with a degenerate fallback
+        (e.g. room temp), which would cause the alpha state to drift to the
+        upper bound — see #301.
         """
         if self.outdoor_temp is not None:
             return self.outdoor_temp, "sensor"
@@ -406,7 +412,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             ws = self.hass.states.get(weather_eid)
             if ws is not None and ws.state not in ("unavailable", "unknown"):
                 temp_attr = ws.attributes.get("temperature")
-                if isinstance(temp_attr, (int, float)):
+                if isinstance(temp_attr, (int, float)) and not isinstance(temp_attr, bool):
                     converted = ha_temp_to_celsius(self.hass, float(temp_attr), entity_id=weather_eid)
                     if converted is not None:
                         return converted, "weather"
@@ -422,8 +428,6 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         returns. Suppressed entirely when the user disables it via the
         ``outdoor_unavailable_notify`` global setting.
         """
-        from .const import OUTDOOR_UNAVAILABLE_NOTIFICATION_ID, OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES
-
         if self.outdoor_temp_effective is not None:
             self._outdoor_unavailable_cycles = 0
             if self._outdoor_warning_sent:
@@ -478,7 +482,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             _get_area_name(self.hass, area_id),
             current_temp,
             current_humidity,
-            self.outdoor_temp,
+            self.outdoor_temp_effective,
             settings,
             celsius_delta_to_ha_fn=lambda d: celsius_delta_to_ha(self.hass, d),  # type: ignore[misc]
             ha_temp_unit_str_fn=lambda: ha_temp_unit_str(self.hass),  # type: ignore[misc]
@@ -604,7 +608,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             self.hass,
             room,
             model_manager=self._model_manager,
-            outdoor_temp=self.outdoor_temp,
+            outdoor_temp=self.outdoor_temp_effective,
             outdoor_forecast=outdoor_forecast,
             settings=settings,
             previous_mode=self._previous_modes.get(area_id, MODE_IDLE),
@@ -706,7 +710,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 power_fraction=power_fraction,
                 current_temp=current_temp,
                 target_temp=targets.heat,
-                outdoor_temp=self.outdoor_temp,
+                outdoor_temp=self.outdoor_temp_effective,
                 previous_active_sources=self._heat_source_states.get(area_id, "none"),
                 hass=self.hass,
             )
@@ -818,7 +822,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             targets=targets,
             mode=mode,
             current_temp=current_temp,
-            outdoor_temp=self.outdoor_temp,
+            outdoor_temp=self.outdoor_temp_effective,
             q_solar=self._current_q_solar,
             predicted_peak_temp=controller.predicted_peak_temp,
             has_override=has_override,
@@ -835,11 +839,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             try:
                 _ch, _cc = get_can_heat_cool(
                     room,
-                    self.outdoor_temp,
+                    self.outdoor_temp_effective,
                     acs_can_heat=check_acs_can_heat(self.hass, room),
                     override_active=is_override_active(room),
                 )
-                _T_out = self.outdoor_temp if self.outdoor_temp is not None else DEFAULT_OUTDOOR_TEMP_FALLBACK
+                _T_out = (
+                    self.outdoor_temp_effective
+                    if self.outdoor_temp_effective is not None
+                    else DEFAULT_OUTDOOR_TEMP_FALLBACK
+                )
                 mpc_active = is_mpc_active(
                     self._model_manager,
                     area_id,
@@ -1861,7 +1869,7 @@ class RoomMindCoordinator(DataUpdateCoordinator):
                 new_action = resolve_master_action(
                     modes,
                     group.conflict_resolution,
-                    self.outdoor_temp,
+                    self.outdoor_temp_effective,
                     settings.get("outdoor_heating_max", DEFAULT_OUTDOOR_HEATING_MAX),
                 )
 

@@ -281,6 +281,84 @@ async def test_list_rooms_learning_paused_respects_learning_disabled(ws_hass, st
 
 
 @pytest.mark.asyncio
+async def test_list_rooms_learning_paused_none_for_managed_mode(ws_hass, store, connection):
+    """Managed Mode rooms (no temperature_sensor) never train the EKF, so
+    learning_paused_reason must be None even when outdoor is unavailable."""
+    await store.async_load()
+    save_msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "kitchen",
+        "thermostats": ["climate.kitchen_trv"],
+        # no temperature_sensor → Managed Mode
+    }
+    await _save_room(ws_hass, connection, save_msg)
+    connection.send_result.reset_mock()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.outdoor_temp = None
+    mock_coordinator.outdoor_temp_effective = None
+    mock_coordinator.outdoor_humidity = None
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    rooms = connection.send_result.call_args[0][1]["rooms"]
+    assert rooms["kitchen"]["live"]["learning_paused_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_learning_paused_none_for_outdoor_area(ws_hass, store, connection):
+    """is_outdoor rooms disable learning entirely, so learning_paused_reason
+    is None even when the outdoor temperature is missing."""
+    await store.async_load()
+    save_msg = {
+        "id": 2,
+        "type": "roommind/rooms/save",
+        "area_id": "balcony",
+        "thermostats": ["climate.balcony_trv"],
+        "temperature_sensor": "sensor.balcony_temp",
+        "is_outdoor": True,
+    }
+    await _save_room(ws_hass, connection, save_msg)
+    connection.send_result.reset_mock()
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.outdoor_temp = None
+    mock_coordinator.outdoor_temp_effective = None
+    mock_coordinator.outdoor_humidity = None
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 3, "type": "roommind/rooms/list"})
+
+    rooms = connection.send_result.call_args[0][1]["rooms"]
+    assert rooms["balcony"]["live"]["learning_paused_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_rooms_outdoor_temp_uses_effective(ws_hass, store, connection):
+    """The rooms/list response surfaces the effective outdoor temperature
+    (sensor → weather fallback) rather than only the raw sensor reading."""
+    await store.async_load()
+    mock_coordinator = MagicMock()
+    mock_coordinator.rooms = {}
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.outdoor_temp = None
+    mock_coordinator.outdoor_temp_effective = 8.5
+    mock_coordinator.outdoor_humidity = None
+    ws_hass.data[DOMAIN]["coordinator"] = mock_coordinator
+
+    await _list_rooms(ws_hass, connection, {"id": 1, "type": "roommind/rooms/list"})
+
+    payload = connection.send_result.call_args[0][1]
+    assert payload["outdoor_temp"] == 8.5
+
+
+@pytest.mark.asyncio
 async def test_save_room_display_name_roundtrip(ws_hass, store, connection):
     """display_name is persisted through save and returned in list."""
     await store.async_load()
@@ -1188,6 +1266,7 @@ def _make_analytics_coordinator(history_rows=None, estimator=None, rooms_live=No
     coordinator = MagicMock()
     coordinator.rooms = rooms_live or {}
     coordinator.outdoor_temp = 5.0
+    coordinator.outdoor_temp_effective = 5.0
     coordinator.outdoor_humidity = 60
     coordinator._weather_manager._outdoor_forecast = []
     coordinator._window_manager._paused = {}

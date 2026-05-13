@@ -16,7 +16,7 @@
 | custom\_components/roommind/control/residual\_heat.py              |       24 |        0 |    100% |           |
 | custom\_components/roommind/control/solar.py                       |       81 |        1 |     99% |        72 |
 | custom\_components/roommind/control/thermal\_model.py              |      442 |       17 |     96% |394, 863-878, 989, 1112, 1119-1123 |
-| custom\_components/roommind/coordinator.py                         |      856 |       54 |     94% |324-325, 596-599, 635, 780-781, 791, 793, 1181, 1222, 1280, 1498-1501, 1635-1637, 1641-1647, 1651, 1656, 1677, 1682, 1684, 1687, 1690, 1713, 1718-1723, 1727, 1760, 1762, 1765, 1768, 1784-1785, 1896, 1916-1924, 1942-1943, 1958-1963, 1980-1981 |
+| custom\_components/roommind/coordinator.py                         |      855 |       54 |     94% |326-327, 600-603, 639, 784-785, 795, 797, 1189, 1230, 1288, 1506-1509, 1643-1645, 1649-1655, 1659, 1664, 1685, 1690, 1692, 1695, 1698, 1721, 1726-1731, 1735, 1768, 1770, 1773, 1776, 1792-1793, 1904, 1924-1932, 1950-1951, 1966-1971, 1988-1989 |
 | custom\_components/roommind/diagnostics.py                         |      166 |        0 |    100% |           |
 | custom\_components/roommind/managers/\_\_init\_\_.py               |        0 |        0 |    100% |           |
 | custom\_components/roommind/managers/compressor\_group\_manager.py |      157 |        2 |     99% |  121, 184 |
@@ -44,7 +44,7 @@
 | custom\_components/roommind/utils/schedule\_utils.py               |      149 |        7 |     95% |139-140, 145-146, 154-155, 224 |
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
-| custom\_components/roommind/websocket\_api.py                      |      272 |        2 |     99% |   650-655 |
+| custom\_components/roommind/websocket\_api.py                      |      273 |        2 |     99% |   658-663 |
 | **TOTAL**                                                          | **5376** |  **245** | **95%** |           |
 
 

@@ -31,13 +31,23 @@ MANAGED_ROOM = {
 }
 
 
-def _make_store_mock(rooms=None):
-    """Create a store mock with proper get_settings and get_thermal_data returns."""
+def _make_store_mock(rooms=None, settings=None):
+    """Create a store mock with proper get_settings and get_thermal_data returns.
+
+    ``outdoor_temp_sensor`` defaults to ``"sensor.outdoor_temp"`` so tests that
+    supply ``outdoor_temp=...`` to :func:`make_mock_states_get` exercise the
+    real outdoor-temperature path (EKF training requires a valid outdoor
+    temperature, see #301).
+    """
     store = MagicMock()
     store.get_rooms.return_value = rooms or {}
-    store.get_settings.return_value = {}
+    default_settings = {"outdoor_temp_sensor": "sensor.outdoor_temp"}
+    if settings:
+        default_settings.update(settings)
+    store.get_settings.return_value = default_settings
     store.get_thermal_data.return_value = {}
     store.async_save_thermal_data = AsyncMock()
+    store.async_save_settings = AsyncMock()
     return store
 
 

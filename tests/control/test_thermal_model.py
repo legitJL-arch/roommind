@@ -382,7 +382,7 @@ def test_ekf_serialization_roundtrip():
     assert restored.confidence == pytest.approx(ekf.confidence, abs=0.01)
 
     # Verify serialization metadata
-    assert data["ekf_version"] == 5
+    assert data["ekf_version"] == 6
 
 
 def test_ekf_get_model_c1_normalization():
@@ -1629,7 +1629,7 @@ def test_ekf_from_dict_6d_roundtrip():
     ekf.update(T_measured=20.0, T_outdoor=5.0, mode="idle", dt_minutes=5.0, q_occupancy=1.0)
     ekf.update(T_measured=20.5, T_outdoor=5.0, mode="idle", dt_minutes=5.0, q_occupancy=1.0)
     data = ekf.to_dict()
-    assert data["ekf_version"] == 5
+    assert data["ekf_version"] == 6
     restored = ThermalEKF.from_dict(data)
     for i in range(6):
         assert restored._x[i] == pytest.approx(ekf._x[i], rel=1e-6)
@@ -1800,11 +1800,29 @@ def test_from_dict_resets_corrupt_5d_legacy():
     assert ekf._P[2][2] == pytest.approx(ThermalEKF._P_INIT_BETA)
 
 
-def test_v5_save_at_bound_does_not_reset():
-    """v5 saves with alpha exactly at the bound are NOT reset — the migration
-    is a one-shot for legacy data only."""
+def test_v5_save_at_bound_triggers_reset():
+    """v5 saves with alpha at the bound are reset by the v6 migration (#301).
+    Models that drifted back to the bound after the #150 fix were stuck
+    because no further migration triggered."""
     data = {
         "ekf_version": 5,
+        "x": [20.0, ThermalEKF._ALPHA_MAX, 3.0, 4.0, 0.5, 0.3],
+        "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
+        "n_updates": 100,
+        "applicable_modes": ["heating", "idle"],
+        "last_mode": "idle",
+        "initialized": True,
+    }
+    ekf = ThermalEKF.from_dict(data)
+    assert ekf._x[1] == pytest.approx(ThermalEKF._DEFAULT_ALPHA)
+    assert ekf._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
+
+
+def test_v6_save_at_bound_does_not_reset():
+    """v6 saves with alpha at the bound are NOT reset — the v6 migration is a
+    one-shot for legacy data only (would otherwise loop on every load)."""
+    data = {
+        "ekf_version": 6,
         "x": [20.0, ThermalEKF._ALPHA_MAX, 3.0, 4.0, 0.5, 0.3],
         "P": [[0.1 if i == j else 0.0 for j in range(6)] for i in range(6)],
         "n_updates": 100,
@@ -1839,12 +1857,12 @@ def test_v4_save_at_bound_triggers_reset():
     assert ekf._x[2] == pytest.approx(ThermalEKF._DEFAULT_BETA_H)
 
 
-def test_to_dict_writes_v5():
+def test_to_dict_writes_current_version():
     """to_dict emits the current ekf_version stamp."""
     ekf = ThermalEKF()
     ekf.update(T_measured=20.0, T_outdoor=10.0, mode="idle", dt_minutes=5.0)
     data = ekf.to_dict()
-    assert data["ekf_version"] == 5
+    assert data["ekf_version"] == 6
 
 
 def test_from_dict_v4_at_bound_preserves_counters_and_modes():

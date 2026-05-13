@@ -7,6 +7,8 @@ import time
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.components.persistent_notification import async_create as async_create_notification
+from homeassistant.components.persistent_notification import async_dismiss as async_dismiss_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -102,7 +104,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.rooms: dict = {}
         self.outdoor_temp: float | None = None
+        self.outdoor_temp_effective: float | None = None
+        self.outdoor_temp_source: str = "none"
         self.outdoor_humidity: float | None = None
+        self._outdoor_unavailable_cycles: int = 0
+        self._outdoor_warning_sent: bool = False
         self._window_manager = WindowManager()
         self._previous_modes: dict[str, str] = {}
         self._model_manager: RoomModelManager = RoomModelManager()
@@ -171,6 +177,12 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         self.outdoor_humidity = read_sensor_value(
             self.hass, settings.get("outdoor_humidity_sensor"), "global", "outdoor humidity"
         )
+
+        # Effective outdoor temperature: sensor → weather entity → none.
+        # The EKF must not train with a degenerate fallback (e.g. room temp);
+        # see _async_process_room where this gates EKF updates.
+        self.outdoor_temp_effective, self.outdoor_temp_source = self._resolve_outdoor_temp(settings)
+        self._update_outdoor_unavailable_notification(settings)
 
         # Load compressor groups from settings (every cycle, cheap)
         self._compressor_manager.load_groups(settings.get("compressor_groups", []))
@@ -373,6 +385,82 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         current_humidity = read_sensor_value(self.hass, room.get("humidity_sensor"), area_id, "humidity")
 
         return current_temp, current_temp_raw, current_humidity, has_external_sensor
+
+    def _resolve_outdoor_temp(self, settings: dict) -> tuple[float | None, str]:
+        """Return (temp, source) for the current cycle.
+
+        Source is one of:
+          - "sensor": primary outdoor_temp_sensor delivered a value
+          - "weather": weather_entity attribute "temperature" delivered a value
+          - "none": neither source available
+
+        EKF training is gated on a non-None effective temperature so the
+        filter never trains with a degenerate fallback (e.g. room temp), which
+        would cause the alpha state to drift to the upper bound — see #301.
+        """
+        if self.outdoor_temp is not None:
+            return self.outdoor_temp, "sensor"
+
+        weather_eid = settings.get("weather_entity") or ""
+        if weather_eid:
+            ws = self.hass.states.get(weather_eid)
+            if ws is not None and ws.state not in ("unavailable", "unknown"):
+                temp_attr = ws.attributes.get("temperature")
+                if isinstance(temp_attr, (int, float)):
+                    converted = ha_temp_to_celsius(self.hass, float(temp_attr), entity_id=weather_eid)
+                    if converted is not None:
+                        return converted, "weather"
+
+        return None, "none"
+
+    def _update_outdoor_unavailable_notification(self, settings: dict) -> None:
+        """Track consecutive cycles without a valid outdoor temperature.
+
+        After OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES (default 60 ≈ 30 min) raise a
+        single HA persistent notification informing the user that EKF training
+        is paused. The notification clears as soon as a valid outdoor source
+        returns. Suppressed entirely when the user disables it via the
+        ``outdoor_unavailable_notify`` global setting.
+        """
+        from .const import OUTDOOR_UNAVAILABLE_NOTIFICATION_ID, OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES
+
+        if self.outdoor_temp_effective is not None:
+            self._outdoor_unavailable_cycles = 0
+            if self._outdoor_warning_sent:
+                self._outdoor_warning_sent = False
+                async_dismiss_notification(self.hass, OUTDOOR_UNAVAILABLE_NOTIFICATION_ID)
+            return
+
+        self._outdoor_unavailable_cycles += 1
+
+        if self._outdoor_warning_sent:
+            return
+        if self._outdoor_unavailable_cycles < OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES:
+            return
+        if not settings.get("outdoor_unavailable_notify", True):
+            return
+
+        sensor_id = settings.get("outdoor_temp_sensor") or "(not configured)"
+        weather_eid = settings.get("weather_entity") or "(not configured)"
+        message = (
+            "RoomMind cannot read an outdoor temperature. Thermal model "
+            "learning is paused for all rooms until a valid source returns.\n\n"
+            f"• Outdoor sensor: `{sensor_id}`\n"
+            f"• Weather entity: `{weather_eid}`\n\n"
+            "Check that the sensor is online or configure a weather entity in "
+            "Settings → Outdoor."
+        )
+        _LOGGER.warning(
+            "Outdoor temperature unavailable for %d cycles — EKF learning paused",
+            self._outdoor_unavailable_cycles,
+        )
+        async_create_notification(
+            self.hass,
+            message,
+            title="RoomMind: outdoor temperature unavailable",
+            notification_id=OUTDOOR_UNAVAILABLE_NOTIFICATION_ID,
+        )
+        self._outdoor_warning_sent = True
 
     async def _evaluate_mold_risk(
         self,
@@ -925,16 +1013,20 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             ekf_mode = MODE_IDLE
             q_residual_training = 0.0
 
-        # Update thermal model with observation (EKF online learning)
+        # Update thermal model with observation (EKF online learning).
+        # The filter must NOT train with a degenerate outdoor fallback (e.g.
+        # using room temp when the sensor is unavailable): F[0][1] collapses
+        # toward 0, alpha drifts under process noise and eventually pegs at
+        # the upper bound (see #301).  Skip the update — and flush any
+        # accumulated batch — when no real outdoor source is available.
         learning_disabled = settings.get("learning_disabled_rooms", [])
         learning_active = area_id not in learning_disabled
-        if learning_active and current_temp_raw is not None:
-            T_outdoor = self.outdoor_temp if self.outdoor_temp is not None else current_temp_raw
+        if learning_active and current_temp_raw is not None and self.outdoor_temp_effective is not None:
             can_heat, can_cool = get_can_heat_cool(room, acs_can_heat=check_acs_can_heat(self.hass, room))
             self._ekf_training.process(
                 area_id=area_id,
                 current_temp=current_temp_raw,
-                T_outdoor=T_outdoor,
+                T_outdoor=self.outdoor_temp_effective,
                 ekf_mode=ekf_mode,
                 ekf_pf=ekf_pf,
                 window_open=window_open,

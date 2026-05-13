@@ -839,7 +839,7 @@ class ThermalEKF:
     def to_dict(self) -> dict:
         """Serialize EKF state for persistence."""
         return {
-            "ekf_version": 5,
+            "ekf_version": 6,
             "x": list(self._x),
             "P": [list(row) for row in self._P],
             "n_updates": self._n_updates,
@@ -904,47 +904,61 @@ class ThermalEKF:
         ekf._initialized = data.get("initialized", ekf._n_updates > 0)
         ekf._k_window = data.get("k_window", cls._K_WINDOW_DEFAULT)
         ekf._k_window_n = data.get("k_window_n", 0)
-        # Recovery migration v<5 → v5 (#150 follow-up).  Models with alpha
-        # pegged at the upper bound cannot escape on their own: 4-sigma
-        # anomaly detection soft-rejects the large innovations and
-        # cross-covariance pulls alpha back to the bound after every predict
-        # step.  Reset all RC parameters and their P block to defaults; keep
-        # counters, T-state, P[0][0], modes and k_window so MPC data gates
-        # stay satisfied while the accuracy gate self-throttles to bang-bang
-        # until the filter relearns.
+        # Recovery migrations for models with alpha pegged at the upper bound.
+        # Such models cannot escape on their own: 4-sigma anomaly detection
+        # soft-rejects the large innovations and cross-covariance pulls alpha
+        # back to the bound after every predict step.  Reset all RC parameters
+        # and their P block to defaults; keep counters, T-state, P[0][0],
+        # modes and k_window so MPC data gates stay satisfied while the
+        # accuracy gate self-throttles to bang-bang until the filter relearns.
+        #
+        # v<5 → v5 (#150 follow-up): first recovery for pre-#150 ghost-heating.
+        # v<6 → v6 (#301): subsequent recovery for models that drifted back
+        #   to the bound, e.g. due to outdoor-sensor fallback corruption
+        #   (now prevented in the coordinator EKF training path).
         ekf_version_raw = data.get("ekf_version", 0)
         ekf_version = ekf_version_raw if isinstance(ekf_version_raw, int) else 0
-        if ekf_version < 5 and len(ekf._x) >= 6 and len(ekf._P) >= 6 and ekf._x[1] >= cls._ALPHA_MAX * 0.99:
-            legacy_alpha = ekf._x[1]
-            ekf._x[1] = cls._DEFAULT_ALPHA
-            ekf._x[2] = cls._DEFAULT_BETA_H
-            ekf._x[3] = cls._DEFAULT_BETA_C
-            ekf._x[4] = cls._DEFAULT_BETA_S
-            ekf._x[5] = cls._DEFAULT_BETA_O
-            p_init_diag = (
-                cls._P_INIT_T,
-                cls._P_INIT_ALPHA,
-                cls._P_INIT_BETA,
-                cls._P_INIT_BETA,
-                cls._P_INIT_BETA_S,
-                cls._P_INIT_BETA_O,
-            )
-            for i in range(cls._N):
-                for j in range(cls._N):
-                    if i != j:
-                        ekf._P[i][j] = 0.0
-                if i >= 1:
-                    ekf._P[i][i] = p_init_diag[i]
-            _LOGGER.warning(
-                "ThermalEKF: recovered from alpha pegged at upper bound "
-                "(legacy ekf_version=%d, alpha=%.3f → reset to defaults). "
-                "Predictions will improve over the next few hours as the filter relearns.",
-                ekf_version,
-                legacy_alpha,
-            )
+        if ekf_version < 6 and len(ekf._x) >= 6 and len(ekf._P) >= 6 and ekf._x[1] >= cls._ALPHA_MAX * 0.99:
+            cls._reset_rc_params_for_recovery(ekf, ekf_version)
         # Apply bounds in case stored data is out of range
         ekf._clamp_parameters()
         return ekf
+
+    @classmethod
+    def _reset_rc_params_for_recovery(cls, ekf: ThermalEKF, ekf_version: int) -> None:
+        """Reset RC parameters and their P block to defaults.
+
+        Used by load-time recovery migrations when alpha is pegged at the
+        upper bound.  Preserves T-state, P[0][0], counters, modes and
+        k_window.
+        """
+        legacy_alpha = ekf._x[1]
+        ekf._x[1] = cls._DEFAULT_ALPHA
+        ekf._x[2] = cls._DEFAULT_BETA_H
+        ekf._x[3] = cls._DEFAULT_BETA_C
+        ekf._x[4] = cls._DEFAULT_BETA_S
+        ekf._x[5] = cls._DEFAULT_BETA_O
+        p_init_diag = (
+            cls._P_INIT_T,
+            cls._P_INIT_ALPHA,
+            cls._P_INIT_BETA,
+            cls._P_INIT_BETA,
+            cls._P_INIT_BETA_S,
+            cls._P_INIT_BETA_O,
+        )
+        for i in range(cls._N):
+            for j in range(cls._N):
+                if i != j:
+                    ekf._P[i][j] = 0.0
+            if i >= 1:
+                ekf._P[i][i] = p_init_diag[i]
+        _LOGGER.warning(
+            "ThermalEKF: recovered from alpha pegged at upper bound "
+            "(legacy ekf_version=%d, alpha=%.3f → reset to defaults). "
+            "Predictions will improve over the next few hours as the filter relearns.",
+            ekf_version,
+            legacy_alpha,
+        )
 
     def __repr__(self) -> str:
         return (

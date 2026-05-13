@@ -5,6 +5,7 @@ import { getModeClass, formatMode } from "../utils/room-state";
 import { modeStyles } from "../styles/shared-mode-styles";
 import { localize } from "../utils/localize";
 import { formatTemp, tempUnit, toDisplayDelta } from "../utils/temperature";
+import "./shared/rs-info-icon";
 
 const PENCIL_PATH =
   "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z";
@@ -282,6 +283,10 @@ export class RsHeroStatus extends LitElement {
         color: var(--secondary-text-color);
         background: var(--secondary-background-color);
         border-radius: 8px;
+      }
+
+      .learning-paused rs-info-icon {
+        margin-left: 2px;
       }
 
       .uncontrolled-hint {
@@ -622,6 +627,19 @@ export class RsHeroStatus extends LitElement {
                       delta: toDisplayDelta(live.mold_prevention_delta, this.hass).toFixed(0),
                       unit: tempUnit(this.hass),
                     })}
+                  </div>`
+                : nothing}
+              ${live.learning_paused_reason === "outdoor_unavailable" && !this.isOutdoor
+                ? html`<div class="hero-metric warning learning-paused">
+                    <ha-icon icon="mdi:school-outline"></ha-icon>
+                    ${localize("hero.mpc_learning_paused", this.hass?.language ?? "en")}
+                    <rs-info-icon
+                      icon="mdi:information-outline"
+                      .text=${localize(
+                        "hero.mpc_learning_paused.outdoor_unavailable",
+                        this.hass?.language ?? "en",
+                      )}
+                    ></rs-info-icon>
                   </div>`
                 : nothing}
               ${!this.climateControlActive && !this.isOutdoor

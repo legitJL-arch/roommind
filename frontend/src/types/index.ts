@@ -50,6 +50,7 @@ export interface RoomLiveData {
   cover_forced_reason: string;
   active_cover_schedule_index: number;
   active_heat_sources: string | null;
+  learning_paused_reason: "outdoor_unavailable" | null;
 }
 
 export type DeviceType = "trv" | "ac";
@@ -143,6 +144,7 @@ export interface GlobalSettings {
   control_mode?: "mpc" | "bangbang";
   comfort_weight?: number;
   weather_entity?: string;
+  outdoor_unavailable_notify?: boolean;
   climate_control_active?: boolean;
   learning_disabled_rooms?: string[];
   hidden_rooms?: string[];

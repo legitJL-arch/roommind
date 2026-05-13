@@ -77,6 +77,8 @@
   "hero.permanent": "Dauerhaft",
   "hero.waiting": "Warte auf Sensordaten...",
   "hero.not_configured": "Noch nicht konfiguriert",
+  "hero.mpc_learning_paused": "MPC-Lernen pausiert",
+  "hero.mpc_learning_paused.outdoor_unavailable": "RoomMind benötigt eine Außentemperatur, um das thermische Modell dieses Raums zu lernen. Der konfigurierte Außensensor ist nicht verfügbar und es ist keine Wetter-Entity als Fallback gesetzt. Konfiguriere eine der beiden in den Einstellungen.",
 
   "card.target": "Ziel",
   "card.waiting": "Warte auf Daten...",
@@ -334,7 +336,9 @@
   "settings.comfort_weight_efficiency": "Effizienz",
   "settings.comfort_weight_hint": "Gewichtet Temperaturgenauigkeit gegen Energieverbrauch. Komfort reagiert früher und bleibt näher am Zielwert. Effizienz erlaubt mehr Abweichung, um Heiz- und Kühllaufzeiten zu reduzieren.",
   "settings.weather_entity": "Wettervorhersage",
-  "settings.weather_entity_hint": "Optional: ermöglicht vorausschauende Außentemperaturplanung",
+  "settings.weather_entity_hint": "Optional: ermöglicht vorausschauende Außentemperaturplanung und dient als Fallback wenn der Außensensor nicht verfügbar ist",
+  "settings.outdoor_unavailable_notify": "Hinweis bei fehlender Außentemperatur",
+  "settings.outdoor_unavailable_notify_hint": "Zeigt eine Home-Assistant-Benachrichtigung, wenn weder Außensensor noch Wetter-Entity 30 Minuten lang eine Temperatur geliefert haben. In dieser Zeit pausiert RoomMind das Lernen des thermischen Modells, um Korruption zu vermeiden.",
   "settings.prediction_enabled": "Temperaturvorhersage",
   "settings.prediction_enabled_hint": "Zeigt den vorhergesagten Temperaturverlauf im Analyse-Diagramm. Bei langsamer Performance deaktivieren.",
 

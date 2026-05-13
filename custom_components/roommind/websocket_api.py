@@ -113,6 +113,7 @@ _SETTINGS_SAVE_FIELDS = (
     "control_mode",
     "comfort_weight",
     "weather_entity",
+    "outdoor_unavailable_notify",
     "climate_control_active",
     "learning_disabled_rooms",
     "hidden_rooms",
@@ -201,6 +202,12 @@ async def websocket_list_rooms(
         await coordinator.async_request_refresh()
     live_states = coordinator.rooms if coordinator else {}
 
+    # Outdoor temperature availability gates EKF training (#301).  Surface the
+    # paused state per room so the frontend can show an explanatory badge.
+    outdoor_available = coordinator is not None and coordinator.outdoor_temp_effective is not None
+    settings = store.get_settings()
+    learning_disabled = set(settings.get("learning_disabled_rooms", []))
+
     # Build response: config + live state per room
     # Override fields are computed from the store (always up-to-date) rather
     # than from the coordinator (which refreshes on a 10s cycle).
@@ -208,6 +215,10 @@ async def websocket_list_rooms(
     for area_id, room_config in rooms.items():
         room_data = dict(room_config)
         live = live_states.get(area_id, {})
+        if not outdoor_available and area_id not in learning_disabled and not room_config.get("is_outdoor", False):
+            learning_paused_reason: str | None = "outdoor_unavailable"
+        else:
+            learning_paused_reason = None
 
         room_data["live"] = {
             "current_temp": live.get("current_temp"),
@@ -234,11 +245,11 @@ async def websocket_list_rooms(
             "cover_forced_reason": live.get("cover_forced_reason", ""),
             "active_cover_schedule_index": live.get("active_cover_schedule_index", -1),
             "active_heat_sources": live.get("active_heat_sources"),
+            "learning_paused_reason": learning_paused_reason,
         }
         result[area_id] = room_data
 
     # Vacation state from settings
-    settings = store.get_settings()
     vacation_until = settings.get("vacation_until")
     vacation_active = bool(vacation_until and time.time() < vacation_until)
 
@@ -562,6 +573,7 @@ async def websocket_get_settings(
         vol.Optional("control_mode"): vol.In(["mpc", "bangbang"]),
         vol.Optional("comfort_weight"): vol.Coerce(float),
         vol.Optional("weather_entity"): str,
+        vol.Optional("outdoor_unavailable_notify"): bool,
         vol.Optional("climate_control_active"): bool,
         vol.Optional("learning_disabled_rooms"): [str],
         vol.Optional("hidden_rooms"): [str],

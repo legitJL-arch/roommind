@@ -43,6 +43,7 @@ export class RsSettings extends LitElement {
   @state() private _controlMode: "mpc" | "bangbang" = "mpc";
   @state() private _comfortWeight = 70;
   @state() private _weatherEntity = "";
+  @state() private _outdoorUnavailableNotify = true;
   @state() private _predictionEnabled = true;
   @state() private _vacationActive = false;
   @state() private _vacationTemp = 15;
@@ -94,6 +95,7 @@ export class RsSettings extends LitElement {
       this._controlMode = s.control_mode ?? "mpc";
       this._comfortWeight = s.comfort_weight ?? 70;
       this._weatherEntity = s.weather_entity ?? "";
+      this._outdoorUnavailableNotify = s.outdoor_unavailable_notify ?? true;
       this._predictionEnabled = s.prediction_enabled ?? true;
       const vUntil = s.vacation_until;
       this._vacationActive = !!(vUntil && vUntil > Date.now() / 1000);
@@ -159,6 +161,7 @@ export class RsSettings extends LitElement {
           .outdoorTempSensor=${this._outdoorTempSensor}
           .outdoorHumiditySensor=${this._outdoorHumiditySensor}
           .weatherEntity=${this._weatherEntity}
+          .outdoorUnavailableNotify=${this._outdoorUnavailableNotify}
           @setting-changed=${this._onSettingChanged}
         ></rs-settings-sensors>
       </rs-settings-panel>
@@ -334,6 +337,7 @@ export class RsSettings extends LitElement {
         control_mode: this._controlMode,
         comfort_weight: this._comfortWeight,
         weather_entity: this._weatherEntity,
+        outdoor_unavailable_notify: this._outdoorUnavailableNotify,
         prediction_enabled: this._predictionEnabled,
         vacation_temp: this._vacationTemp,
         vacation_until: this._vacationActive

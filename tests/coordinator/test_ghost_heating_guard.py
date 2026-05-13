@@ -287,7 +287,7 @@ class TestGhostHeatingGuard:
             hass,
             mock_config_entry,
             states_get,
-            settings={"climate_control_active": False},
+            settings={"climate_control_active": False, "outdoor_temp_sensor": "sensor.outdoor_temp"},
         )
 
         assert kwargs is not None

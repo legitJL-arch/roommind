@@ -77,6 +77,8 @@
   "hero.permanent": "Permanent",
   "hero.waiting": "Waiting for sensor data...",
   "hero.not_configured": "Not configured yet",
+  "hero.mpc_learning_paused": "MPC learning paused",
+  "hero.mpc_learning_paused.outdoor_unavailable": "RoomMind needs an outdoor temperature to learn this room's thermal model. The configured outdoor sensor is unavailable and no weather entity is set as a fallback. Configure either in Settings.",
 
   "card.target": "Target",
   "card.waiting": "Waiting for data...",
@@ -334,7 +336,9 @@
   "settings.comfort_weight_efficiency": "Efficiency",
   "settings.comfort_weight_hint": "Balances temperature precision against energy use. Comfort reacts earlier and stays closer to target. Efficiency allows more drift to reduce heating/cooling runtime.",
   "settings.weather_entity": "Weather Forecast",
-  "settings.weather_entity_hint": "Optional: enables predictive outdoor temperature planning",
+  "settings.weather_entity_hint": "Optional: enables predictive outdoor temperature planning, and acts as a fallback when the outdoor sensor is unavailable",
+  "settings.outdoor_unavailable_notify": "Notify when outdoor temperature is unavailable",
+  "settings.outdoor_unavailable_notify_hint": "Show a Home Assistant notification when neither the outdoor sensor nor the weather entity has reported a temperature for 30 minutes. While this is the case, RoomMind pauses thermal model learning to avoid corruption.",
   "settings.prediction_enabled": "Temperature prediction",
   "settings.prediction_enabled_hint": "Show predicted temperature trend in analytics charts. Disable if you experience slow performance.",
 

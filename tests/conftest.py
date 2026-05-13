@@ -15,7 +15,7 @@ def make_mock_states_get(
     humidity="55.0",
     schedule_state="on",
     schedule_attrs=None,
-    outdoor_temp=None,
+    outdoor_temp="5.0",
     outdoor_temp_entity="sensor.outdoor_temp",
     window_sensors=None,
     selector_state=None,

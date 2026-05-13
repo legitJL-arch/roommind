@@ -85,6 +85,11 @@ HISTORY_ROTATE_CYCLES = 360  # ~3 hours
 # EKF update: accumulate observations before updating (better signal-to-noise)
 EKF_UPDATE_MIN_DT = 3.0  # minutes — matches HISTORY_WRITE_CYCLES
 
+# Outdoor sensor watchdog: notify when no valid outdoor temperature for this
+# many coordinator cycles (60 × 30 s = 30 min).
+OUTDOOR_UNAVAILABLE_NOTIFY_CYCLES = 60
+OUTDOOR_UNAVAILABLE_NOTIFICATION_ID = "roommind_outdoor_unavailable"
+
 # Prediction clamping: max °C change in one prediction step (prevents unrealistic jumps)
 MAX_PREDICTION_DELTA = 3.0
 

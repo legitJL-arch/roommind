@@ -73,6 +73,25 @@ export const loadHaElements = async (): Promise<void> => {
 
   await customElements.whenDefined("ha-card");
 
+  // Step 2b: HA 2026.5 removed `ha-textfield` (home-assistant/frontend#30349).
+  // If it is missing but the successor `ha-input` exists, register a
+  // wrapper so existing `<ha-textfield>` templates keep working. Older HA
+  // versions retain their native ha-textfield and fall through untouched.
+  if (!customElements.get("ha-textfield")) {
+    try {
+      await Promise.race([
+        customElements.whenDefined("ha-input"),
+        new Promise<void>((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
+      ]);
+      const { HaTextfieldPolyfill } = await import("./ha-textfield-polyfill");
+      if (!customElements.get("ha-textfield")) {
+        customElements.define("ha-textfield", HaTextfieldPolyfill);
+      }
+    } catch {
+      // ha-input not available — ha-textfield templates will render empty
+    }
+  }
+
   // Step 3: Load ha-date-range-picker (used by rs-analytics).
   if (!customElements.get("ha-date-range-picker")) {
     try {

@@ -679,7 +679,6 @@ export class RsSensorSection extends LitElement {
     selectedCount: number;
     extras?: unknown;
   }) {
-    const lang = this.hass.language;
     const total = opts.areaSensors.length + opts.externalSensors.length;
     const isCollapsed = this._collapsed[opts.kind] ?? true;
     return html`

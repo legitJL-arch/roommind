@@ -53,6 +53,9 @@ def _migrate_room(room: dict) -> dict:
     return room
 
 
+_ORPHAN_SETTINGS_KEYS = ("heating_threshold", "cooling_threshold")
+
+
 class RoomMindStore:
     """Manage room configuration storage for RoomMind."""
 
@@ -86,12 +89,15 @@ class RoomMindStore:
                 room["thermostats"] = t
                 room["acs"] = a
                 hp_migrated += 1
-        if device_migrated or hp_migrated:
+        orphan_settings_removed = [k for k in _ORPHAN_SETTINGS_KEYS if self._settings.pop(k, None) is not None]
+        if device_migrated or hp_migrated or orphan_settings_removed:
             await self._async_save()
         if device_migrated:
             _LOGGER.info("Migrated %d room(s) to unified device model", device_migrated)
         if hp_migrated:
             _LOGGER.info("Migrated %d room(s) from heat_pump to ac device type", hp_migrated)
+        if orphan_settings_removed:
+            _LOGGER.info("Removed orphan setting(s): %s", ", ".join(orphan_settings_removed))
 
     async def _async_save(self) -> None:
         """Persist current room data to the HA store."""

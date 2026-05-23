@@ -218,6 +218,40 @@ async def test_settings_migration_from_old_store(store):
 
 
 @pytest.mark.asyncio
+async def test_orphan_settings_removed_on_load(store):
+    """Legacy heating_threshold/cooling_threshold are stripped and persisted."""
+    store._store.async_load = AsyncMock(
+        return_value={
+            "rooms": {},
+            "settings": {
+                "outdoor_temp_sensor": "sensor.outdoor",
+                "heating_threshold": 0.3,
+                "cooling_threshold": 1,
+            },
+        }
+    )
+    await store.async_load()
+
+    settings = store.get_settings()
+    assert "heating_threshold" not in settings
+    assert "cooling_threshold" not in settings
+    assert settings["outdoor_temp_sensor"] == "sensor.outdoor"
+    saved_data = store._store.async_save.call_args[0][0]
+    assert "heating_threshold" not in saved_data["settings"]
+    assert "cooling_threshold" not in saved_data["settings"]
+
+
+@pytest.mark.asyncio
+async def test_orphan_settings_load_without_them_no_save(store):
+    """Clean settings don't trigger a migration save."""
+    store._store.async_load = AsyncMock(
+        return_value={"rooms": {}, "settings": {"outdoor_temp_sensor": "sensor.outdoor"}}
+    )
+    await store.async_load()
+    assert not store._store.async_save.called
+
+
+@pytest.mark.asyncio
 async def test_thermal_data_persistence(store):
     """Thermal data can be saved and retrieved."""
     await store.async_load()

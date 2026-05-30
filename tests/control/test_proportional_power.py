@@ -577,3 +577,142 @@ async def test_ac_cooling_boost_cap_floors_setpoint_at_efficiency():
     set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
     assert set_temp
     assert set_temp[-1][0][2]["temperature"] == 20.0
+
+
+def settings_for(cw):
+    return {} if cw is None else {"comfort_weight": cw}
+
+
+def _make_controller(cw):
+    hass = build_hass()
+    room = make_room()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings=settings_for(cw),
+        has_external_sensor=True,
+    )
+    return hass, ctrl
+
+
+def _mock_device(hass, setpoint):
+    dev = MagicMock()
+    dev.state = "heat"
+    dev.attributes = {"hvac_modes": ["heat", "off"], "temperature": setpoint, "min_temp": 16.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=dev)
+    return dev
+
+
+def test_proportional_deadband_helper_disabled_at_comfort():
+    _, ctrl = _make_controller(None)  # cw=70 default
+    assert ctrl._proportional_deadband("climate.x", 18.0, 22.0) is None
+
+
+def test_proportional_deadband_helper_values_at_efficiency():
+    from custom_components.roommind.const import (
+        PROPORTIONAL_DEADBAND_C,
+        PROPORTIONAL_DEADBAND_NEAR_TARGET_C,
+    )
+
+    _, ctrl = _make_controller(0)  # full efficiency
+    assert ctrl._proportional_deadband("climate.x", 18.0, 22.0) == PROPORTIONAL_DEADBAND_C
+    assert ctrl._proportional_deadband("climate.x", 21.5, 22.0) == PROPORTIONAL_DEADBAND_NEAR_TARGET_C
+
+
+def test_proportional_deadband_helper_none_for_direct_device():
+    _, ctrl = _make_controller(0)
+    ctrl._direct_eids = {"climate.direct"}
+    assert ctrl._proportional_deadband("climate.direct", 18.0, 22.0) is None
+
+
+def test_proportional_deadband_helper_none_when_current_temp_unknown():
+    _, ctrl = _make_controller(0)  # full efficiency
+    assert ctrl._proportional_deadband("climate.x", None, 22.0) is None
+
+
+@pytest.mark.asyncio
+async def test_call_deadband_suppresses_subthreshold_change():
+    hass, ctrl = _make_controller(0)
+    _mock_device(hass, setpoint=22.0)
+    await ctrl._call(
+        "set_temperature", {"entity_id": "climate.x", "temperature": 22.3}, temp_intent="heat", deadband=0.5
+    )
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert set_temp == []  # 0.3 < 0.5 → suppressed
+
+
+@pytest.mark.asyncio
+async def test_call_deadband_sends_suprathreshold_change():
+    hass, ctrl = _make_controller(0)
+    _mock_device(hass, setpoint=22.0)
+    await ctrl._call(
+        "set_temperature", {"entity_id": "climate.x", "temperature": 22.6}, temp_intent="heat", deadband=0.5
+    )
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert len(set_temp) == 1  # 0.6 >= 0.5 → sent
+
+
+@pytest.mark.asyncio
+async def test_call_without_deadband_preserves_exact_behavior():
+    hass, ctrl = _make_controller(None)
+    _mock_device(hass, setpoint=22.0)
+    await ctrl._call("set_temperature", {"entity_id": "climate.x", "temperature": 22.3}, temp_intent="heat")
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert len(set_temp) == 1  # no deadband → today's behavior: round(22.0,1) != round(22.3,1) → sent
+
+
+@pytest.mark.asyncio
+async def test_call_without_deadband_skips_when_rounds_equal():
+    hass, ctrl = _make_controller(None)
+    _mock_device(hass, setpoint=22.0)
+    await ctrl._call("set_temperature", {"entity_id": "climate.x", "temperature": 22.04}, temp_intent="heat")
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert set_temp == []  # round(22.04,1)==round(22.0,1) → skipped, exactly as before
+
+
+@pytest.mark.asyncio
+async def test_call_deadband_near_target_finer_band():
+    hass, ctrl = _make_controller(0)
+    _mock_device(hass, setpoint=22.0)
+    # 0.3°C change with the finer 0.2 near-target deadband → sent (0.3 >= 0.2)
+    await ctrl._call(
+        "set_temperature", {"entity_id": "climate.x", "temperature": 22.3}, temp_intent="heat", deadband=0.2
+    )
+    sent = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert len(sent) == 1
+    # 0.15°C change with the 0.2 deadband → suppressed
+    hass.services.async_call.reset_mock()
+    _mock_device(hass, setpoint=22.0)
+    await ctrl._call(
+        "set_temperature", {"entity_id": "climate.x", "temperature": 22.15}, temp_intent="heat", deadband=0.2
+    )
+    sent = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_call_deadband_converts_to_fahrenheit_units():
+    from homeassistant.const import UnitOfTemperature
+
+    hass, ctrl = _make_controller(0)
+    hass.config.units.temperature_unit = UnitOfTemperature.FAHRENHEIT
+    dev = MagicMock()
+    dev.state = "heat"
+    dev.attributes = {"hvac_modes": ["heat", "off"], "temperature": 72.0, "min_temp": 60.0, "max_temp": 86.0}
+    hass.states.get = MagicMock(return_value=dev)
+    # deadband 0.5°C = 0.9°F → a 0.5°F change must be suppressed
+    await ctrl._call(
+        "set_temperature", {"entity_id": "climate.x", "temperature": 72.5}, temp_intent="heat", deadband=0.5
+    )
+    sent = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert sent == []
+    # a 1.0°F change (>= 0.9°F) must be sent
+    hass.services.async_call.reset_mock()
+    dev.attributes["temperature"] = 72.0
+    await ctrl._call(
+        "set_temperature", {"entity_id": "climate.x", "temperature": 73.0}, temp_intent="heat", deadband=0.5
+    )
+    sent = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert len(sent) == 1

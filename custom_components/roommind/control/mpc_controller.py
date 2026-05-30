@@ -27,6 +27,8 @@ from ..const import (
     MODE_COOLING,
     MODE_HEATING,
     MODE_IDLE,
+    PROPORTIONAL_DEADBAND_C,
+    PROPORTIONAL_DEADBAND_NEAR_TARGET_C,
     TargetTemps,
     is_override_active,
     make_roommind_context,
@@ -42,7 +44,7 @@ from ..utils.device_utils import (
     get_trv_eids,
     has_reliable_hvac_modes,
 )
-from ..utils.temp_utils import celsius_to_ha_temp
+from ..utils.temp_utils import celsius_delta_to_ha, celsius_to_ha_temp
 from .mpc_optimizer import MPCOptimizer, MPCPlan
 from .residual_heat import get_min_run_blocks
 from .thermal_model import RoomModelManager
@@ -1409,6 +1411,7 @@ class MPCController:
                             "set_temperature",
                             {"entity_id": cmd.entity_id, "temperature": ha_t},
                             temp_intent="heat",
+                            deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
                         )
                     else:  # ac
                         if self.has_external_sensor and current_temp is not None:
@@ -1430,6 +1433,7 @@ class MPCController:
                                 "set_temperature",
                                 {"entity_id": cmd.entity_id, "temperature": ha_t},
                                 temp_intent="heat",
+                                deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
                             )
                         elif "heat_cool" in ac_modes:
                             await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "heat_cool"})
@@ -1437,6 +1441,7 @@ class MPCController:
                                 "set_temperature",
                                 {"entity_id": cmd.entity_id, "temperature": ha_t},
                                 temp_intent="heat",
+                                deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
                             )
                         elif "auto" in ac_modes:
                             await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "auto"})
@@ -1444,6 +1449,7 @@ class MPCController:
                                 "set_temperature",
                                 {"entity_id": cmd.entity_id, "temperature": ha_t},
                                 temp_intent="heat",
+                                deadband=self._proportional_deadband(cmd.entity_id, current_temp, effective_target),
                             )
                         else:
                             await self._call("set_hvac_mode", {"entity_id": cmd.entity_id, "hvac_mode": "off"})
@@ -1489,7 +1495,12 @@ class MPCController:
                     continue
                 ha_t = ha_trv_direct if eid in self._direct_eids else ha_trv
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
-                await self._call("set_temperature", {"entity_id": eid, "temperature": ha_t}, temp_intent="heat")
+                await self._call(
+                    "set_temperature",
+                    {"entity_id": eid, "temperature": ha_t},
+                    temp_intent="heat",
+                    deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                )
             # ACs: proportional setpoint in Full Control, actual target otherwise
             if self.has_external_sensor and current_temp is not None:
                 ac_heat_target = round(
@@ -1511,13 +1522,28 @@ class MPCController:
                 ac_modes = _effective_ac_modes(ac_state)
                 if "heat" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat"})
-                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_t}, temp_intent="heat")
+                    await self._call(
+                        "set_temperature",
+                        {"entity_id": eid, "temperature": ha_t},
+                        temp_intent="heat",
+                        deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                    )
                 elif "heat_cool" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "heat_cool"})
-                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_t}, temp_intent="heat")
+                    await self._call(
+                        "set_temperature",
+                        {"entity_id": eid, "temperature": ha_t},
+                        temp_intent="heat",
+                        deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                    )
                 elif "auto" in ac_modes:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "auto"})
-                    await self._call("set_temperature", {"entity_id": eid, "temperature": ha_t}, temp_intent="heat")
+                    await self._call(
+                        "set_temperature",
+                        {"entity_id": eid, "temperature": ha_t},
+                        temp_intent="heat",
+                        deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                    )
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_COOLING:
@@ -1538,7 +1564,12 @@ class MPCController:
                     continue
                 ha_t = ha_cool_direct if eid in self._direct_eids else ha_target
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "cool"})
-                await self._call("set_temperature", {"entity_id": eid, "temperature": ha_t}, temp_intent="cool")
+                await self._call(
+                    "set_temperature",
+                    {"entity_id": eid, "temperature": ha_t},
+                    temp_intent="cool",
+                    deadband=self._proportional_deadband(eid, current_temp, effective_target),
+                )
             for eid in thermostats:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
@@ -1588,7 +1619,22 @@ class MPCController:
                     continue
                 await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
 
-    async def _call(self, service: str, data: dict, *, temp_intent: str = "") -> None:
+    def _proportional_deadband(self, eid: str, current_temp: float | None, effective_target: float) -> float | None:
+        """Deadband threshold for a proportional setpoint send, or None to disable.
+
+        Active only in the gentle regime (approach_rate < 1.0) and never for
+        direct-mode devices or managed mode. Finer near target so the final
+        approach stays regulated.
+        """
+        if self._approach_rate >= 1.0 or eid in self._direct_eids or not self.has_external_sensor:
+            return None
+        if current_temp is None:
+            return None
+        if abs(current_temp - effective_target) <= 1.0:
+            return PROPORTIONAL_DEADBAND_NEAR_TARGET_C
+        return PROPORTIONAL_DEADBAND_C
+
+    async def _call(self, service: str, data: dict, *, temp_intent: str = "", deadband: float | None = None) -> None:
         eid = data.get("entity_id")
         state = self.hass.states.get(eid) if eid else None
 
@@ -1716,6 +1762,8 @@ class MPCController:
             if service == "set_hvac_mode" and state.state == data.get("hvac_mode"):
                 skip = True
             elif service == "set_temperature":
+                # Dual-setpoint (range) devices: proportional deadband is intentionally
+                # NOT applied here — it only governs single-setpoint gentle-regime sends.
                 if "target_temp_low" in data:
                     cur_low = state.attributes.get("target_temp_low")
                     cur_high = state.attributes.get("target_temp_high")
@@ -1733,10 +1781,17 @@ class MPCController:
                 else:
                     current = state.attributes.get("temperature")
                     desired = data.get("temperature")
-                    if current is not None and desired is not None and round(current, 1) == round(desired, 1):
-                        skip = True
+                    if current is not None and desired is not None:
+                        if deadband is not None and deadband > 0.0:
+                            ha_deadband = celsius_delta_to_ha(self.hass, deadband)
+                            if abs(float(current) - float(desired)) < ha_deadband:
+                                skip = True
+                        elif round(current, 1) == round(desired, 1):
+                            skip = True
 
-        # Fallback: check sent-command cache (for IR devices without state feedback)
+        # Fallback: check sent-command cache (for IR devices without state feedback).
+        # Proportional deadband is intentionally NOT applied here — it is anchored to
+        # live device state, while this branch handles IR/no-state devices via the cache.
         if not skip and eid and _should_use_cache(state):
             cached = _last_commands.get(eid)
             if cached is not None and cached.get("service") == service:

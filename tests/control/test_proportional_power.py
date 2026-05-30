@@ -503,3 +503,77 @@ def test_slider_default_and_comfort_keep_ac_cap_unbounded():
 
 def test_slider_efficiency_tightens_ac_cap():
     assert _ctrl_with_cw(0)._ac_boost_delta == pytest.approx(3.0)
+
+
+@pytest.mark.asyncio
+async def test_ac_boost_cap_limits_setpoint_at_efficiency():
+    """At full efficiency the AC heating setpoint is capped at target + 3°C."""
+    hass = build_hass()
+    ac_state = MagicMock()
+    ac_state.state = "heat"
+    ac_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.0, "min_temp": 16.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={"comfort_weight": 0},
+        has_external_sensor=True,
+    )
+    # pf=1.0 would map to boost 30°C; cap must clamp to target(21) + 3 = 24°C
+    await ctrl.async_apply("heating", 21.0, power_fraction=1.0, current_temp=18.0)
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert set_temp
+    assert set_temp[-1][0][2]["temperature"] == 24.0
+
+
+@pytest.mark.asyncio
+async def test_ac_boost_cap_does_not_apply_at_comfort():
+    """At comfort/default the cap is unbounded; AC reaches boost as today."""
+    hass = build_hass()
+    ac_state = MagicMock()
+    ac_state.state = "heat"
+    ac_state.attributes = {"hvac_modes": ["heat", "off"], "temperature": 21.0, "min_temp": 16.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    await ctrl.async_apply("heating", 21.0, power_fraction=1.0, current_temp=18.0)
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert set_temp
+    assert set_temp[-1][0][2]["temperature"] == 30.0
+
+
+@pytest.mark.asyncio
+async def test_ac_cooling_boost_cap_floors_setpoint_at_efficiency():
+    """At full efficiency the AC cooling setpoint is floored at target - 3°C."""
+    hass = build_hass()
+    ac_state = MagicMock()
+    ac_state.state = "cool"
+    ac_state.attributes = {"hvac_modes": ["cool", "off"], "temperature": 23.0, "min_temp": 16.0, "max_temp": 30.0}
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=30.0,
+        settings={"comfort_weight": 0},
+        has_external_sensor=True,
+    )
+    # pf=1.0 would map to cool boost 16°C; cap must floor at target(23) - 3 = 20°C
+    await ctrl.async_apply("cooling", 23.0, power_fraction=1.0, current_temp=26.0)
+    set_temp = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
+    assert set_temp
+    assert set_temp[-1][0][2]["temperature"] == 20.0

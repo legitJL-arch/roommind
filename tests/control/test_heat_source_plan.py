@@ -884,6 +884,55 @@ async def test_apply_orchestrated_forced_on_ac():
 
 
 @pytest.mark.asyncio
+async def test_heat_source_plan_ac_heating_boost_cap_at_efficiency():
+    """Orchestrated active AC heating setpoint is capped at target + 3°C at full efficiency."""
+    from custom_components.roommind.managers.heat_source_orchestrator import DeviceCommand, HeatSourcePlan
+
+    _last_commands.clear()
+    hass = build_hass()
+    ac_state = _make_ac_state_for_plan(["heat", "cool", "off"], current_state="off")
+    hass.states.get = MagicMock(return_value=ac_state)
+
+    room = make_room(thermostats=[], acs=["climate.ac1"])
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings={"comfort_weight": 0},
+        has_external_sensor=True,
+    )
+    plan = HeatSourcePlan(
+        commands=[
+            DeviceCommand(
+                entity_id="climate.ac1",
+                role="secondary",
+                device_type="ac",
+                active=True,
+                power_fraction=1.0,
+                reason="test",
+            ),
+        ],
+        active_sources="secondary",
+        reason="test",
+    )
+    # pf=1.0, current=18, ac_boost=30 -> raw 18 + 1.0*(30-18) = 30
+    # cap: min(30, target(21) + 3, 30) = 24.0
+    await ctrl.async_apply(
+        mode=MODE_HEATING,
+        targets=TargetTemps(heat=21.0, cool=None),
+        power_fraction=1.0,
+        current_temp=18.0,
+        heat_source_plan=plan,
+    )
+
+    calls = hass.services.async_call.call_args_list
+    ac_temp = [c for c in calls if c[0][1] == "set_temperature" and c[0][2]["entity_id"] == "climate.ac1"]
+    assert len(ac_temp) == 1
+    assert ac_temp[0][0][2]["temperature"] == 24.0
+
+
+@pytest.mark.asyncio
 async def test_hso_direct_setpoint_trv():
     """Active TRV with setpoint_mode='direct' in HSO receives target, not boost."""
     from custom_components.roommind.managers.heat_source_orchestrator import (

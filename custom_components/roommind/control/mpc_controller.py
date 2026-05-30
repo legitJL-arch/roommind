@@ -1417,7 +1417,7 @@ class MPCController:
                                 1,
                             )
                             t = max(effective_target, t)
-                            t = min(ac_heat_boost, t)
+                            t = min(ac_heat_boost, effective_target + self._ac_boost_delta, t)
                         else:
                             t = effective_target
                         t_final = effective_target if cmd.entity_id in self._direct_eids else t
@@ -1497,7 +1497,7 @@ class MPCController:
                     1,
                 )
                 ac_heat_target = max(effective_target, ac_heat_target)
-                ac_heat_target = min(ac_heat_boost, ac_heat_target)
+                ac_heat_target = min(ac_heat_boost, effective_target + self._ac_boost_delta, ac_heat_target)
             else:
                 ac_heat_target = effective_target
             ha_ac_target = celsius_to_ha_temp(self.hass, ac_heat_target)
@@ -1526,7 +1526,7 @@ class MPCController:
                     current_temp - power_fraction * (current_temp - ac_cool_boost),
                     1,
                 )
-                ac_cool_target = max(ac_cool_boost, ac_cool_target)
+                ac_cool_target = max(ac_cool_boost, effective_target - self._ac_boost_delta, ac_cool_target)
                 ac_cool_target = min(effective_target, ac_cool_target)
             else:
                 ac_cool_target = effective_target

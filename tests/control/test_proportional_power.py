@@ -468,3 +468,38 @@ async def test_dynamic_ac_heating_boost():
 
     temp_calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_temperature"]
     assert any(c[0][2]["temperature"] == 28.0 for c in temp_calls)
+
+
+def _ctrl_with_cw(cw):
+    hass = build_hass()
+    room = make_room()
+    settings = {} if cw is None else {"comfort_weight": cw}
+    return MPCController(
+        hass,
+        room,
+        model_manager=RoomModelManager(),
+        outdoor_temp=5.0,
+        settings=settings,
+        has_external_sensor=True,
+    )
+
+
+def test_slider_default_and_comfort_keep_approach_rate_one():
+    assert _ctrl_with_cw(None)._approach_rate == 1.0  # default cw=70
+    assert _ctrl_with_cw(70)._approach_rate == 1.0
+    assert _ctrl_with_cw(100)._approach_rate == 1.0
+
+
+def test_slider_efficiency_lowers_approach_rate():
+    assert _ctrl_with_cw(0)._approach_rate == pytest.approx(0.2)
+    assert _ctrl_with_cw(35)._approach_rate == pytest.approx(0.6)
+
+
+def test_slider_default_and_comfort_keep_ac_cap_unbounded():
+    assert _ctrl_with_cw(None)._ac_boost_delta == 50.0
+    assert _ctrl_with_cw(70)._ac_boost_delta == 50.0
+    assert _ctrl_with_cw(100)._ac_boost_delta == 50.0
+
+
+def test_slider_efficiency_tightens_ac_cap():
+    assert _ctrl_with_cw(0)._ac_boost_delta == pytest.approx(3.0)

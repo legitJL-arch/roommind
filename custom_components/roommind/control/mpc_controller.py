@@ -11,12 +11,16 @@ from typing import TYPE_CHECKING, Any, cast
 from homeassistant.core import HomeAssistant
 
 from ..const import (
+    AC_BOOST_DELTA_MAX,
+    AC_BOOST_DELTA_MIN,
     AC_COOLING_BOOST_TARGET,
     AC_HEATING_BOOST_TARGET,
+    APPROACH_RATE_MIN,
     BANGBANG_COOL_HYSTERESIS,
     BANGBANG_HEAT_HYSTERESIS,
     CLIMATE_MODE_COOL_ONLY,
     CLIMATE_MODE_HEAT_ONLY,
+    DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
     HEATING_BOOST_TARGET,
@@ -754,6 +758,11 @@ class MPCController:
         cw = s.get("comfort_weight", 70)
         self._w_comfort = max(1.0, cw / 10.0)
         self._w_energy = max(1.0, (100 - cw) / 10.0)
+        self._approach_rate = min(1.0, APPROACH_RATE_MIN + (1.0 - APPROACH_RATE_MIN) * cw / DEFAULT_COMFORT_WEIGHT)
+        self._ac_boost_delta = min(
+            AC_BOOST_DELTA_MAX,
+            AC_BOOST_DELTA_MIN + (AC_BOOST_DELTA_MAX - AC_BOOST_DELTA_MIN) * cw / DEFAULT_COMFORT_WEIGHT,
+        )
 
     async def async_evaluate(
         self,
@@ -910,6 +919,7 @@ class MPCController:
             min_run_blocks=min_run,
             override_active=is_override_active(self.room_config),
             heating_system_type=self._heating_system_type,
+            approach_rate=self._approach_rate,
         )
 
         plan = optimizer.optimize(

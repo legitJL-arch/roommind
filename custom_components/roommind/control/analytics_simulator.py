@@ -5,8 +5,10 @@ from __future__ import annotations
 import time
 
 from ..const import (
+    APPROACH_RATE_MIN,
     BANGBANG_COOL_HYSTERESIS,
     BANGBANG_HEAT_HYSTERESIS,
+    DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
     MODE_COOLING,
@@ -234,6 +236,7 @@ def _simulate_mpc(
         outdoor_heating_max=ohm,
         min_run_blocks=min_run,
         heating_system_type=heating_system_type,
+        approach_rate=min(1.0, APPROACH_RATE_MIN + (1.0 - APPROACH_RATE_MIN) * cw / DEFAULT_COMFORT_WEIGHT),
     )
 
     T = current_temp

@@ -27,7 +27,7 @@
 | custom\_components/roommind/managers/mold\_manager.py              |       69 |        0 |    100% |           |
 | custom\_components/roommind/managers/residual\_heat\_tracker.py    |       38 |        0 |    100% |           |
 | custom\_components/roommind/managers/valve\_manager.py             |      112 |        0 |    100% |           |
-| custom\_components/roommind/managers/weather\_manager.py           |       54 |        0 |    100% |           |
+| custom\_components/roommind/managers/weather\_manager.py           |       59 |        0 |    100% |           |
 | custom\_components/roommind/managers/window\_manager.py            |       37 |        0 |    100% |           |
 | custom\_components/roommind/repairs.py                             |       15 |        0 |    100% |           |
 | custom\_components/roommind/sensor.py                              |       54 |        0 |    100% |           |
@@ -45,7 +45,7 @@
 | custom\_components/roommind/utils/sensor\_utils.py                 |       29 |        1 |     97% |        25 |
 | custom\_components/roommind/utils/temp\_utils.py                   |       26 |        0 |    100% |           |
 | custom\_components/roommind/websocket\_api.py                      |      273 |        2 |     99% |   665-670 |
-| **TOTAL**                                                          | **5457** |  **246** | **95%** |           |
+| **TOTAL**                                                          | **5462** |  **246** | **95%** |           |
 
 
 ## Setup coverage badge

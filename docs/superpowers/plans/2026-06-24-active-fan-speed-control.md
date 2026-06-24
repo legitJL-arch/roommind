@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make RoomMind's active heat/cool control loop modulate `climate.set_fan_mode` proportionally to demand, reusing the existing `power_fraction` signal, so Josh can retire a standalone Home Assistant automation that currently fills this gap.
+**Goal:** Make RoomMind's active heat/cool control loop modulate `climate.set_fan_mode` proportionally to demand, reusing the existing `power_fraction` signal, so the homeowner can retire a standalone Home Assistant automation that currently fills this gap.
 
 **Architecture:** `power_fraction` (0.0-1.0, already computed by `MPCController.async_evaluate` and already threaded into `async_apply`) is quantized into one of 4 fan-speed bands (`low`/`medlow`/`medhigh`/`high`) by a new pure function with hysteresis, then sent via `climate.set_fan_mode` from inside the existing AC branches of `async_apply`, gated by a new per-device `active_fan_control` opt-in flag. Band-crossing memory lives in a module-level dict (mirroring the existing `_last_commands` cache pattern), since `MPCController` instances are recreated every poll cycle.
 
@@ -10,7 +10,7 @@
 
 **Full design spec:** `docs/superpowers/specs/2026-06-24-active-fan-speed-control-design.md`
 
-**Scope note:** This plan only touches the simple AC branches of `async_apply` (`mode == MODE_HEATING` / `MODE_COOLING`, no `heat_source_plan`). The multi-device heat-source-orchestration path (`heat_source_plan is not None`) and the no-external-sensor "managed mode" path are intentionally NOT touched — Josh's setup uses neither, and adding fan-speed logic there would be speculative generalization for code paths with no current consumer.
+**Scope note:** This plan only touches the simple AC branches of `async_apply` (`mode == MODE_HEATING` / `MODE_COOLING`, no `heat_source_plan`). The multi-device heat-source-orchestration path (`heat_source_plan is not None`) and the no-external-sensor "managed mode" path are intentionally NOT touched — this setup uses neither, and adding fan-speed logic there would be speculative generalization for code paths with no current consumer.
 
 ---
 
@@ -804,9 +804,9 @@ git commit -m "fix: lint/type cleanup for active fan-speed control"
 
 ---
 
-### Task 7 (manual, not code): Migrate Josh's live Home Assistant config
+### Task 7 (manual, not code): Migrate the homeowner's live Home Assistant config
 
-This task has no code changes — it is the Home Assistant config migration described in the design spec's "Migration off the existing automation" section. Do this only after Tasks 1-6 are merged and Josh has confirmed the new behavior works correctly on his real aircon for a few cycles.
+This task has no code changes — it is the Home Assistant config migration described in the design spec's "Migration off the existing automation" section. Do this only after Tasks 1-6 are merged and the homeowner has confirmed the new behavior works correctly on the real aircon for a few cycles.
 
 - [ ] **Step 1:** Confirm `climate.aircon`'s fan speed changes correctly during a real heat/cool cycle with `active_fan_control: true` set in RoomMind's room config for that device (via the RoomMind frontend), while `automation.aircon_fan_auto_control` is still enabled (so there's no gap in coverage during verification).
 - [ ] **Step 2:** Disable `automation.aircon_fan_auto_control` in Home Assistant (turn off, don't delete yet).

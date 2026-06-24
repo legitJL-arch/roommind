@@ -11,7 +11,7 @@ Confirmed via code review and upstream issue history (snazzybean/roommind#18, cl
 2026-03-15: "Full proportional fan speed control during active heating/cooling is still
 on the roadmap") that this is a genuine, unaddressed gap — not a duplicate effort.
 
-Josh currently fills this gap with a standalone Home Assistant automation
+The homeowner currently fills this gap with a standalone Home Assistant automation
 (`automation.aircon_fan_auto_control`) that steps `input_select.aircon_fan` based on
 the raw temperature/target differential, with a 10-minute "kick to High" warmup on
 mode start. This project replaces that automation with logic built directly into the
@@ -22,7 +22,7 @@ independent system writing to the same device.
 ## Scope
 
 - Per-device opt-in (new `active_fan_control` config flag), not global. Today only one
-  device (`climate.aircon`, a Mitsubishi Heavy Industries SRK35ZSA-W via IR/template
+  device (`climate.aircon`, a split-system A/C via IR/template
   climate) will have it enabled.
 - Active control path only (`async_apply`, `mode in {HEATING, COOLING}`). The idle path
   (`async_idle_device`) is unchanged.
@@ -75,7 +75,7 @@ following the precedent of `BANGBANG_HEAT_HYSTERESIS`/`BANGBANG_COOL_HYSTERESIS`
 per-device configurable. With only one device in use, per-device tuning would be
 premature.
 
-No "kick to high on mode start" warmup is needed: Josh's temperature sensor has already
+No "kick to high on mode start" warmup is needed: the room's temperature sensor has already
 been relocated to the far end of the long room it serves, so a large initial
 temperature gap (and therefore a large `power_fraction`) already occurs naturally at
 the start of a heating/cooling cycle.

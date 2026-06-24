@@ -63,6 +63,14 @@ class TargetTemps(NamedTuple):
 # Smart control defaults
 BANGBANG_HEAT_HYSTERESIS = 0.2  # °C below target → start heating (bang-bang fallback)
 BANGBANG_COOL_HYSTERESIS = 0.2  # °C above target → start cooling (bang-bang fallback)
+
+# Fan-speed bands during active heating/cooling, quantized from power_fraction (0.0-1.0).
+# Ordered low -> high; FAN_SPEED_EDGES[i] is the boundary between
+# FAN_SPEED_LABELS[i] and FAN_SPEED_LABELS[i + 1].
+FAN_SPEED_LABELS = ("low", "medlow", "medhigh", "high")
+FAN_SPEED_EDGES = (0.25, 0.50, 0.75)
+FAN_SPEED_HYSTERESIS = 0.07  # required overshoot past a boundary before switching bands
+
 DEFAULT_OUTDOOR_COOLING_MIN = 16  # Hard block: NEVER cool if outdoor < this
 DEFAULT_OUTDOOR_HEATING_MAX = 22  # Don't heat if outdoor > this
 HEATING_BOOST_TARGET = 30  # Fallback TRV heating boost (used when entity max_temp unavailable)

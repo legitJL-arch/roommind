@@ -23,6 +23,9 @@ from ..const import (
     DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
+    FAN_SPEED_EDGES,
+    FAN_SPEED_HYSTERESIS,
+    FAN_SPEED_LABELS,
     HEATING_BOOST_TARGET,
     MODE_COOLING,
     MODE_HEATING,
@@ -39,6 +42,7 @@ from ..utils.device_utils import (
     IDLE_ACTION_LOW,
     IDLE_ACTION_SETBACK,
     get_ac_eids,
+    get_active_fan_control,
     get_direct_setpoint_eids,
     get_idle_action,
     get_trv_eids,
@@ -62,6 +66,10 @@ _SENTINEL: object = object()  # default marker for backward-compat keyword detec
 # resets on integration reload (module reimport).
 _last_commands: dict[str, dict[str, Any]] = {}
 _setpoint_override_warned: set[str] = set()
+# Last fan-speed band sent per climate entity, for active-control hysteresis.
+# Same lifecycle as _last_commands: persists across MPCController instances
+# (recreated each cycle), resets on integration reload.
+_previous_fan_speeds: dict[str, str] = {}
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -96,9 +104,10 @@ def _snap_to_step(value: float, step: float | None) -> float:
 
 
 def clear_command_cache() -> None:
-    """Clear the sent-command cache (for tests)."""
+    """Clear cached state. Call on integration reload/unload."""
     _last_commands.clear()
     _setpoint_override_warned.clear()
+    _previous_fan_speeds.clear()
 
 
 def _resolve_idle_setpoint(
@@ -598,6 +607,30 @@ def _effective_ac_modes(state: Any) -> list[str]:
     if has_reliable_hvac_modes(state):
         return modes
     return _ASSUMED_FULL_MODES
+
+
+def _fan_speed_for_power_fraction(power_fraction: float, previous_speed: str | None) -> str:
+    """Quantize power_fraction (0.0-1.0) into a fan-speed band with hysteresis.
+
+    Mirrors the existing mode-stickiness pattern used for heat/cool decisions
+    (previous_mode + crossing back past the target, not the original trigger
+    threshold): moving to a different band requires crossing its boundary by
+    FAN_SPEED_HYSTERESIS, not just touching it, so the fan doesn't flap near
+    a threshold.
+    """
+    try:
+        index = FAN_SPEED_LABELS.index(previous_speed)
+    except ValueError:
+        index = 0  # unknown/no previous speed: start unbiased from the bottom
+
+    # Move up: each edge above the current band must be cleared by the buffer.
+    while index < len(FAN_SPEED_EDGES) and power_fraction >= FAN_SPEED_EDGES[index] + FAN_SPEED_HYSTERESIS:
+        index += 1
+    # Move down: the edge below the current band must be cleared by the buffer.
+    while index > 0 and power_fraction < FAN_SPEED_EDGES[index - 1] - FAN_SPEED_HYSTERESIS:
+        index -= 1
+
+    return FAN_SPEED_LABELS[index]
 
 
 # Maximum prediction uncertainty (degC) for MPC to be used.
@@ -1540,6 +1573,7 @@ class MPCController:
                         temp_intent="heat",
                         deadband=self._proportional_deadband(eid, current_temp, effective_target),
                     )
+                    await self._async_apply_active_fan_speed(eid, power_fraction)
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_COOLING:
@@ -1566,6 +1600,7 @@ class MPCController:
                     temp_intent="cool",
                     deadband=self._proportional_deadband(eid, current_temp, effective_target),
                 )
+                await self._async_apply_active_fan_speed(eid, power_fraction)
             for eid in thermostats:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)
@@ -1629,6 +1664,52 @@ class MPCController:
         if abs(current_temp - effective_target) <= 1.0:
             return PROPORTIONAL_DEADBAND_NEAR_TARGET_C
         return PROPORTIONAL_DEADBAND_C
+
+    async def _async_apply_active_fan_speed(self, eid: str, power_fraction: float) -> None:
+        """Set a proportional fan speed for *eid* while actively heating/cooling.
+
+        Only acts when the device has active_fan_control enabled. Reuses the
+        same power_fraction driving the heat/cool intensity decision, so fan
+        speed has the same momentum as the rest of the active control.
+        """
+        if not get_active_fan_control(self._devices, eid):
+            return
+
+        previous = _previous_fan_speeds.get(eid)
+        desired = _fan_speed_for_power_fraction(power_fraction, previous)
+        _previous_fan_speeds[eid] = desired
+
+        state = self.hass.states.get(eid)
+        fan_modes: list[str] = (state.attributes.get("fan_modes") or []) if state else []
+        if desired not in fan_modes:
+            _LOGGER.debug(
+                "Area '%s': device '%s' does not support fan_mode '%s' (available: %s)",
+                self._area_id,
+                eid,
+                desired,
+                fan_modes,
+            )
+            return
+
+        if state and state.attributes.get("fan_mode") == desired:
+            return
+
+        try:
+            await self.hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": eid, "fan_mode": desired},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Area '%s': climate.set_fan_mode('%s') failed on '%s'",
+                self._area_id,
+                desired,
+                eid,
+                exc_info=True,
+            )
 
     async def _call(self, service: str, data: dict, *, temp_intent: str = "", deadband: float | None = None) -> None:
         eid = data.get("entity_id")

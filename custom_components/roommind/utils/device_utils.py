@@ -223,6 +223,14 @@ def get_idle_action(devices: list[dict], entity_id: str) -> tuple[str, str]:
     )
 
 
+def get_active_fan_control(devices: list[dict], entity_id: str) -> bool:
+    """Return whether *entity_id* has active (non-idle) fan-speed control enabled."""
+    dev = get_device_by_eid(devices, entity_id)
+    if dev is None:
+        return False
+    return bool(dev.get("active_fan_control", False))
+
+
 def get_direct_setpoint_eids(devices: list[dict]) -> set[str]:
     """Return entity IDs of devices with setpoint_mode='direct'."""
     return {d["entity_id"] for d in devices if d.get("entity_id") and d.get("setpoint_mode") == SETPOINT_MODE_DIRECT}

@@ -1454,3 +1454,55 @@ async def test_mpc_apply_cooling_sets_fan_speed_when_enabled():
     fan_calls = [c for c in calls if c[0][1] == "set_fan_mode"]
     assert len(fan_calls) == 1
     assert fan_calls[0][0][2] == {"entity_id": "climate.ac1", "fan_mode": "medhigh"}
+
+
+@pytest.mark.asyncio
+async def test_mpc_apply_fan_speed_hysteresis_persists_across_controller_instances():
+    """_previous_fan_speeds is module-level, so hysteresis survives across separate
+    MPCController instances — simulating two real coordinator poll cycles, where a
+    fresh controller is constructed each cycle (see coordinator.py)."""
+    _last_commands.clear()
+    _previous_fan_speeds.clear()
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "heat"
+    state.attributes = {
+        "hvac_modes": ["heat", "off"],
+        "fan_modes": ["auto", "low", "medlow", "medhigh", "high"],
+        "fan_mode": "low",
+        "temperature": 20.0,
+    }
+    hass.states.get = MagicMock(return_value=state)
+
+    room = make_room(thermostats=[], acs=["climate.ac1"])
+    room["devices"] = [
+        {
+            "entity_id": "climate.ac1",
+            "type": "ac",
+            "role": "auto",
+            "heating_system_type": "",
+            "active_fan_control": True,
+        }
+    ]
+    model_mgr = RoomModelManager()
+
+    # Cycle 1: fresh controller, high demand -> "high".
+    ctrl1 = MPCController(
+        hass, room, model_manager=model_mgr, outdoor_temp=5.0, settings={}, has_external_sensor=True
+    )
+    await ctrl1.async_apply("heating", 21.0, power_fraction=0.9)
+    cycle1_calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert cycle1_calls[-1][0][2] == {"entity_id": "climate.ac1", "fan_mode": "high"}
+
+    hass.services.async_call.reset_mock()
+
+    # Cycle 2: a brand-new MPCController instance (as the coordinator builds each
+    # poll cycle), demand drops but not past the hysteresis buffer below "high"'s
+    # next boundary. If state didn't persist, this would start fresh from "low"
+    # and land on "medlow" instead of "medhigh".
+    ctrl2 = MPCController(
+        hass, room, model_manager=model_mgr, outdoor_temp=5.0, settings={}, has_external_sensor=True
+    )
+    await ctrl2.async_apply("heating", 21.0, power_fraction=0.5)
+    cycle2_calls = [c for c in hass.services.async_call.call_args_list if c[0][1] == "set_fan_mode"]
+    assert cycle2_calls[-1][0][2] == {"entity_id": "climate.ac1", "fan_mode": "medhigh"}

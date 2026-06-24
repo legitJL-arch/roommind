@@ -722,6 +722,22 @@ export class RsDeviceSection extends LitElement {
                   </ha-select>
                 </div>`
               : nothing}
+            <div class="detail-toggle-row">
+              <ha-checkbox
+                .checked=${device.active_fan_control ?? false}
+                @change=${(e: Event) => {
+                  const target = e.target as HTMLElement & { checked: boolean };
+                  this._onActiveFanControlToggle(entityId, target.checked);
+                }}
+              ></ha-checkbox>
+              <div class="detail-toggle-label">
+                <ha-icon icon="mdi:fan-auto"></ha-icon>
+                ${localize("devices.active_fan_control", lang)}
+                <rs-info-icon
+                  .text=${localize("devices.active_fan_control_hint", lang)}
+                ></rs-info-icon>
+              </div>
+            </div>
           `
         : nothing}
       ${isThermostat
@@ -878,6 +894,13 @@ export class RsDeviceSection extends LitElement {
   private _onIdleFanModeChange(entityId: string, fanMode: string): void {
     const newDevices = this.devices.map((d) =>
       d.entity_id === entityId ? { ...d, idle_fan_mode: fanMode } : d,
+    );
+    this._fireDeviceChanged(newDevices);
+  }
+
+  private _onActiveFanControlToggle(entityId: string, enabled: boolean): void {
+    const newDevices = this.devices.map((d) =>
+      d.entity_id === entityId ? { ...d, active_fan_control: enabled } : d,
     );
     this._fireDeviceChanged(newDevices);
   }

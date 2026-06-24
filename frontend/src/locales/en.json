@@ -198,6 +198,8 @@
   "devices.setpoint_mode_hint": "Direct sends the actual room target to the device — best for thermostats and space heaters that regulate themselves. Proportional sends a boosted setpoint toward the device max_temp — best for radiator valves (TRVs).",
   "devices.valve_protection_excluded": "Excluded from valve protection",
   "devices.valve_protection_exclude_hint": "This entity will not be cycled by valve protection (e.g. virtual boiler entities)",
+  "devices.active_fan_control": "Active fan speed control",
+  "devices.active_fan_control_hint": "While heating/cooling, automatically set fan speed (low/medlow/medhigh/high) based on how hard the system is working, with hysteresis to avoid flapping.",
   "devices.info.types_title": "Device types",
   "devices.info.types_body": "Thermostat means a radiator thermostat / TRV. Climate Device means an AC, heat pump, or other climate entity used for cooling or forced-air heating. Both are Home Assistant climate entities; the distinction is how RoomMind controls them.",
   "devices.info.control_title": "How RoomMind controls them",

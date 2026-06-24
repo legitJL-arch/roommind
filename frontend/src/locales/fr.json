@@ -198,6 +198,8 @@
   "devices.setpoint_mode_hint": "Direct envoie la cible réelle de la pièce à l'appareil — idéal pour les thermostats et les chauffages d'appoint qui se régulent eux-mêmes. Proportionnel envoie une consigne renforcée vers la température maximale de l'appareil — idéal pour les vannes de radiateur (TRV).",
   "devices.valve_protection_excluded": "Exclu de la protection des vannes",
   "devices.valve_protection_exclude_hint": "Cette entité ne sera pas cyclée par la protection des vannes (ex. entités chaudière virtuelles)",
+  "devices.active_fan_control": "Contrôle actif de la vitesse du ventilateur",
+  "devices.active_fan_control_hint": "Pendant le chauffage/refroidissement, règle automatiquement la vitesse du ventilateur (low/medlow/medhigh/high) selon l'intensité de fonctionnement, avec hystérésis pour éviter les oscillations.",
   "devices.info.types_title": "Types d'appareil",
   "devices.info.types_body": "Thermostat désigne un thermostat de radiateur / TRV. Appareil climatique désigne un climatiseur, une pompe à chaleur ou autre entité climatique utilisée pour le refroidissement ou le chauffage à air pulsé. Les deux sont des entités climatiques dans Home Assistant; la différence réside dans la façon dont RoomMind les contrôle.",
   "devices.info.control_title": "Comment RoomMind les contrôle",

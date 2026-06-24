@@ -198,6 +198,8 @@
   "devices.setpoint_mode_hint": "Direkt sendet die tatsächliche Raum-Zieltemperatur ans Gerät — geeignet für Thermostate und Heizlüfter mit eigener Regelung. Proportional sendet einen erhöhten Sollwert Richtung Geräte-max_temp — geeignet für Heizkörperventile (TRVs).",
   "devices.valve_protection_excluded": "Vom Ventilschutz ausgenommen",
   "devices.valve_protection_exclude_hint": "Dieses Gerät wird nicht vom Ventilschutz bewegt (z.B. virtuelle Kessel-Entitäten)",
+  "devices.active_fan_control": "Aktive Lüftergeschwindigkeitsregelung",
+  "devices.active_fan_control_hint": "Stellt während Heizen/Kühlen automatisch die Lüftergeschwindigkeit (low/medlow/medhigh/high) je nach Auslastung ein, mit Hysterese gegen Pendeln.",
   "devices.info.types_title": "Gerätetypen",
   "devices.info.types_body": "Thermostat bedeutet Heizkörperthermostat / TRV. Klimagerät bedeutet AC, Wärmepumpe oder eine andere Klima-Entität für Kühlung oder Warmluftheizung. Beides sind Home-Assistant-Klima-Entitäten; der Unterschied liegt darin, wie RoomMind sie ansteuert.",
   "devices.info.control_title": "Wie RoomMind sie steuert",

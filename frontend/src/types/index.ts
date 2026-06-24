@@ -65,6 +65,7 @@ export interface DeviceConfig {
   idle_action?: "off" | "fan_only" | "setback" | "low"; // default "off"
   idle_fan_mode?: string; // default "low"
   setpoint_mode?: "proportional" | "direct"; // default "proportional"
+  active_fan_control?: boolean; // default false
 }
 
 export type ConflictResolution =

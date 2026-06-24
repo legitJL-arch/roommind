@@ -42,6 +42,7 @@ from ..utils.device_utils import (
     IDLE_ACTION_LOW,
     IDLE_ACTION_SETBACK,
     get_ac_eids,
+    get_active_fan_control,
     get_direct_setpoint_eids,
     get_idle_action,
     get_trv_eids,
@@ -1572,6 +1573,7 @@ class MPCController:
                         temp_intent="heat",
                         deadband=self._proportional_deadband(eid, current_temp, effective_target),
                     )
+                    await self._async_apply_active_fan_speed(eid, power_fraction)
                 else:
                     await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "off"})
         elif mode == MODE_COOLING:
@@ -1661,6 +1663,52 @@ class MPCController:
         if abs(current_temp - effective_target) <= 1.0:
             return PROPORTIONAL_DEADBAND_NEAR_TARGET_C
         return PROPORTIONAL_DEADBAND_C
+
+    async def _async_apply_active_fan_speed(self, eid: str, power_fraction: float) -> None:
+        """Set a proportional fan speed for *eid* while actively heating/cooling.
+
+        Only acts when the device has active_fan_control enabled. Reuses the
+        same power_fraction driving the heat/cool intensity decision, so fan
+        speed has the same momentum as the rest of the active control.
+        """
+        if not get_active_fan_control(self._devices, eid):
+            return
+
+        previous = _previous_fan_speeds.get(eid)
+        desired = _fan_speed_for_power_fraction(power_fraction, previous)
+        _previous_fan_speeds[eid] = desired
+
+        state = self.hass.states.get(eid)
+        fan_modes: list[str] = (state.attributes.get("fan_modes") or []) if state else []
+        if desired not in fan_modes:
+            _LOGGER.debug(
+                "Area '%s': device '%s' does not support fan_mode '%s' (available: %s)",
+                self._area_id,
+                eid,
+                desired,
+                fan_modes,
+            )
+            return
+
+        if state and state.attributes.get("fan_mode") == desired:
+            return
+
+        try:
+            await self.hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": eid, "fan_mode": desired},
+                blocking=True,
+                context=make_roommind_context(),
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Area '%s': climate.set_fan_mode('%s') failed on '%s'",
+                self._area_id,
+                desired,
+                eid,
+                exc_info=True,
+            )
 
     async def _call(self, service: str, data: dict, *, temp_intent: str = "", deadband: float | None = None) -> None:
         eid = data.get("entity_id")

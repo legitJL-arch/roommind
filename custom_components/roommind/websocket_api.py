@@ -313,6 +313,7 @@ async def websocket_list_rooms(
                     vol.Optional("idle_action", default="off"): vol.In(["off", "fan_only", "setback", "low"]),
                     vol.Optional("idle_fan_mode", default="low"): str,
                     vol.Optional("setpoint_mode", default="proportional"): vol.In(["proportional", "direct"]),
+                    vol.Optional("active_fan_control", default=False): bool,
                 },
                 _validate_device_idle_action,
             )

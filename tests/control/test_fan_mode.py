@@ -9,6 +9,7 @@ import pytest
 from custom_components.roommind.const import MODE_IDLE, TargetTemps
 from custom_components.roommind.control.mpc_controller import (
     MPCController,
+    _fan_speed_for_power_fraction,
     _last_commands,
     async_idle_device,
     clear_command_cache,
@@ -1161,3 +1162,43 @@ async def test_mpc_apply_call_hvac_off_delegates_setback():
         and c[0][2].get("hvac_mode") == "off"
     ]
     assert len(trv_off) == 0
+
+
+# ---------------------------------------------------------------------------
+# _fan_speed_for_power_fraction — pure hysteresis unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_fan_speed_low_band_default():
+    """No previous speed, low power_fraction -> low."""
+    assert _fan_speed_for_power_fraction(0.1, None) == "low"
+
+
+def test_fan_speed_jumps_straight_to_high_from_unknown():
+    """No previous speed, high power_fraction -> high (no warmup kick needed)."""
+    assert _fan_speed_for_power_fraction(0.9, None) == "high"
+
+
+def test_fan_speed_stays_put_inside_hysteresis_buffer_going_up():
+    """Currently low, power_fraction just below the buffered threshold stays low."""
+    assert _fan_speed_for_power_fraction(0.30, "low") == "low"
+
+
+def test_fan_speed_steps_up_past_buffer():
+    """Currently low, power_fraction past the buffered threshold steps up to medlow."""
+    assert _fan_speed_for_power_fraction(0.33, "low") == "medlow"
+
+
+def test_fan_speed_stays_put_inside_hysteresis_buffer_going_down():
+    """Currently medlow, power_fraction just above the buffered drop threshold stays medlow."""
+    assert _fan_speed_for_power_fraction(0.18, "medlow") == "medlow"
+
+
+def test_fan_speed_steps_down_past_buffer():
+    """Currently medlow, power_fraction below the buffered drop threshold drops to low."""
+    assert _fan_speed_for_power_fraction(0.17, "medlow") == "low"
+
+
+def test_fan_speed_unknown_previous_speed_treated_as_low():
+    """An unrecognized previous_speed value (e.g. 'auto') is treated as starting from low."""
+    assert _fan_speed_for_power_fraction(0.9, "auto") == "high"

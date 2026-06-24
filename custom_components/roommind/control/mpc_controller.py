@@ -23,6 +23,9 @@ from ..const import (
     DEFAULT_COMFORT_WEIGHT,
     DEFAULT_OUTDOOR_COOLING_MIN,
     DEFAULT_OUTDOOR_HEATING_MAX,
+    FAN_SPEED_EDGES,
+    FAN_SPEED_HYSTERESIS,
+    FAN_SPEED_LABELS,
     HEATING_BOOST_TARGET,
     MODE_COOLING,
     MODE_HEATING,
@@ -62,6 +65,10 @@ _SENTINEL: object = object()  # default marker for backward-compat keyword detec
 # resets on integration reload (module reimport).
 _last_commands: dict[str, dict[str, Any]] = {}
 _setpoint_override_warned: set[str] = set()
+# Last fan-speed band sent per climate entity, for active-control hysteresis.
+# Same lifecycle as _last_commands: persists across MPCController instances
+# (recreated each cycle), resets on integration reload.
+_previous_fan_speeds: dict[str, str] = {}
 
 
 def _cache_entry(service: str, data: dict) -> dict[str, Any]:
@@ -96,9 +103,10 @@ def _snap_to_step(value: float, step: float | None) -> float:
 
 
 def clear_command_cache() -> None:
-    """Clear the sent-command cache (for tests)."""
+    """Clear cached state. Call on integration reload/unload."""
     _last_commands.clear()
     _setpoint_override_warned.clear()
+    _previous_fan_speeds.clear()
 
 
 def _resolve_idle_setpoint(
@@ -598,6 +606,30 @@ def _effective_ac_modes(state: Any) -> list[str]:
     if has_reliable_hvac_modes(state):
         return modes
     return _ASSUMED_FULL_MODES
+
+
+def _fan_speed_for_power_fraction(power_fraction: float, previous_speed: str | None) -> str:
+    """Quantize power_fraction (0.0-1.0) into a fan-speed band with hysteresis.
+
+    Mirrors the existing mode-stickiness pattern used for heat/cool decisions
+    (previous_mode + crossing back past the target, not the original trigger
+    threshold): moving to a different band requires crossing its boundary by
+    FAN_SPEED_HYSTERESIS, not just touching it, so the fan doesn't flap near
+    a threshold.
+    """
+    try:
+        index = FAN_SPEED_LABELS.index(previous_speed)
+    except ValueError:
+        index = 0  # unknown/no previous speed: start unbiased from the bottom
+
+    # Move up: each edge above the current band must be cleared by the buffer.
+    while index < len(FAN_SPEED_EDGES) and power_fraction >= FAN_SPEED_EDGES[index] + FAN_SPEED_HYSTERESIS:
+        index += 1
+    # Move down: the edge below the current band must be cleared by the buffer.
+    while index > 0 and power_fraction < FAN_SPEED_EDGES[index - 1] - FAN_SPEED_HYSTERESIS:
+        index -= 1
+
+    return FAN_SPEED_LABELS[index]
 
 
 # Maximum prediction uncertainty (degC) for MPC to be used.

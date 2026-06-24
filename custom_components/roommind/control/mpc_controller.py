@@ -1600,6 +1600,7 @@ class MPCController:
                     temp_intent="cool",
                     deadband=self._proportional_deadband(eid, current_temp, effective_target),
                 )
+                await self._async_apply_active_fan_speed(eid, power_fraction)
             for eid in thermostats:
                 if eid in _forced_off:
                     await async_idle_device(self.hass, eid, self._devices, area_id=self._area_id, targets=targets)

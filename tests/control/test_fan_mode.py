@@ -1406,3 +1406,51 @@ async def test_mpc_apply_heating_fan_speed_redundant_skip():
     calls = hass.services.async_call.call_args_list
     fan_calls = [c for c in calls if c[0][1] == "set_fan_mode"]
     assert len(fan_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# async_apply — active fan-speed control (cooling)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mpc_apply_cooling_sets_fan_speed_when_enabled():
+    """AC with active_fan_control=True gets set_fan_mode during cooling, banded from power_fraction."""
+    _last_commands.clear()
+    _previous_fan_speeds.clear()
+    hass = build_hass()
+    state = MagicMock()
+    state.state = "cool"
+    state.attributes = {
+        "hvac_modes": ["cool", "off"],
+        "fan_modes": ["auto", "low", "medlow", "medhigh", "high"],
+        "fan_mode": "low",
+        "temperature": 24.0,
+    }
+    hass.states.get = MagicMock(return_value=state)
+
+    room = make_room(thermostats=[], acs=["climate.ac1"])
+    room["devices"] = [
+        {
+            "entity_id": "climate.ac1",
+            "type": "ac",
+            "role": "auto",
+            "heating_system_type": "",
+            "active_fan_control": True,
+        }
+    ]
+    model_mgr = RoomModelManager()
+    ctrl = MPCController(
+        hass,
+        room,
+        model_manager=model_mgr,
+        outdoor_temp=30.0,
+        settings={},
+        has_external_sensor=True,
+    )
+    await ctrl.async_apply("cooling", 23.0, power_fraction=0.6)
+
+    calls = hass.services.async_call.call_args_list
+    fan_calls = [c for c in calls if c[0][1] == "set_fan_mode"]
+    assert len(fan_calls) == 1
+    assert fan_calls[0][0][2] == {"entity_id": "climate.ac1", "fan_mode": "medhigh"}
